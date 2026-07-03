@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>AR นักสำรวจร่างกาย — ระบบหายใจ &amp; ไหลเวียนเลือด</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700;800&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#070b14;
+    --void2:#0c1424;
+    --panel:#101a2e;
+    --panel-line: rgba(120,200,220,0.18);
+    --teal:#2ec4b6;
+    --teal-dim: rgba(46,196,182,0.18);
+    --crimson:#e6395a;
+    --crimson-dim: rgba(230,57,90,0.18);
+    --amber:#ffb627;
+    --text:#eaf2f5;
+    --text-dim:#8ea3b8;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:'Sarabun',sans-serif;
+    background:
+      radial-gradient(1200px 700px at 15% -10%, #132038 0%, transparent 60%),
+      radial-gradient(1000px 700px at 110% 20%, #1a1030 0%, transparent 55%),
+      var(--void);
+    color:var(--text);
+    min-height:100vh;
+    overflow-x:hidden;
+    touch-action:none;
+    user-select:none;
+  }
+  h1,h2,h3,.display{font-family:'Kanit',sans-serif;}
+  .scanlines{
+    position:fixed; inset:0; pointer-events:none; z-index:2;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode:overlay;
+  }
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:2;box-shadow:inset 0 0 160px 40px rgba(0,0,0,0.55);}
+
+  /* ---------- App shell ---------- */
+  #app{position:relative; width:100%; min-height:100vh;}
+  .screen{position:absolute; inset:0; min-height:100vh; opacity:0; pointer-events:none; transition:opacity .35s ease;}
+  .screen.active{opacity:1; pointer-events:auto; position:relative;}
+
+  /* ---------- Topbar / HUD ---------- */
+  .hud{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 18px; position:relative; z-index:5;
+    border-bottom:1px solid var(--panel-line);
+    background:linear-gradient(to bottom, rgba(7,11,20,0.9), rgba(7,11,20,0.0));
+  }
+  .hud .brand{display:flex; align-items:center; gap:10px; font-family:'Kanit'; font-weight:700; letter-spacing:.5px;}
+  .hud .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--teal); box-shadow:0 0 10px var(--teal); animation:pulse-dot 1.6s infinite;}
+  @keyframes pulse-dot{0%,100%{opacity:1} 50%{opacity:.3}}
+  .hud .score{font-family:'Kanit'; font-weight:600; font-size:14px; color:var(--amber); display:flex; align-items:center; gap:6px;}
+  .ecg{height:26px; width:130px; overflow:hidden;}
+  .ecg svg{display:block; height:100%;}
+
+  /* ---------- Home ---------- */
+  .home-wrap{max-width:760px; margin:0 auto; padding:26px 20px 60px; position:relative; z-index:3;}
+  .hero{text-align:center; padding:18px 0 8px;}
+  .hero .eyebrow{font-family:'Kanit'; font-size:12px; letter-spacing:3px; color:var(--teal); text-transform:uppercase;}
+  .hero h1{font-size:clamp(28px,7vw,44px); margin:8px 0 6px; line-height:1.15;}
+  .hero h1 span{color:var(--teal);}
+  .hero p{color:var(--text-dim); max-width:520px; margin:0 auto; font-size:15px; line-height:1.7;}
+
+  .hero-organs{position:relative; height:150px; display:flex; align-items:center; justify-content:center; gap:26px; margin:22px 0 6px;}
+  .organ-icon{width:74px; height:74px; filter:drop-shadow(0 0 14px currentColor);}
+  .organ-icon.lung{color:var(--teal); animation:breathe 3.4s ease-in-out infinite;}
+  .organ-icon.heart{color:var(--crimson); animation:beat 1.1s ease-in-out infinite;}
+  @keyframes breathe{0%,100%{transform:scale(1)} 50%{transform:scale(1.12)}}
+  @keyframes beat{0%,100%{transform:scale(1)} 15%{transform:scale(1.18)} 30%{transform:scale(1)} 45%{transform:scale(1.14)} 60%{transform:scale(1)}}
+
+  .reticle-hint{display:flex; align-items:center; justify-content:center; gap:8px; color:var(--text-dim); font-size:13px; margin-top:6px;}
+  .reticle-hint svg{width:16px;height:16px;}
+
+  .cam-toggle{
+    display:flex; align-items:center; gap:10px; justify-content:center; margin:22px auto 0;
+    max-width:340px; padding:10px 16px; border:1px solid var(--panel-line); border-radius:999px;
+    background:rgba(255,255,255,0.02); color:var(--text-dim); font-size:13px; cursor:pointer;
+  }
+  .cam-toggle:active{background:rgba(255,255,255,0.06);}
+  .cam-toggle.on{color:var(--teal); border-color:var(--teal);}
+
+  .level-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:30px;}
+  @media (max-width:520px){.level-grid{grid-template-columns:1fr;}}
+  .level-card{
+    position:relative; border-radius:18px; padding:20px 18px; cursor:pointer;
+    border:1px solid var(--panel-line); background:linear-gradient(160deg, var(--panel), #0b1220);
+    overflow:hidden; transition:transform .15s ease, border-color .15s ease;
+  }
+  .level-card:active{transform:scale(.97);}
+  .level-card .tag{font-family:'Kanit'; font-size:11px; letter-spacing:2px; text-transform:uppercase;}
+  .level-card.resp .tag{color:var(--teal);}
+  .level-card.circ .tag{color:var(--crimson);}
+  .level-card h3{margin:6px 0 8px; font-size:20px;}
+  .level-card p{color:var(--text-dim); font-size:13px; line-height:1.6; margin:0 0 14px;}
+  .level-card .go{font-family:'Kanit'; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;}
+  .level-card.resp .go{color:var(--teal);}
+  .level-card.circ .go{color:var(--crimson);}
+  .level-card .glow{position:absolute; width:160px; height:160px; border-radius:50%; filter:blur(50px); opacity:.35; right:-40px; top:-40px;}
+  .level-card.resp .glow{background:var(--teal);}
+  .level-card.circ .glow{background:var(--crimson);}
+  .level-card .best{position:absolute; top:14px; right:16px; font-size:11px; color:var(--amber); font-family:'Kanit';}
+
+  .footnote{margin-top:26px; text-align:center; color:var(--text-dim); font-size:12px; line-height:1.7;}
+
+  /* ---------- Level screen ---------- */
+  .level-screen{position:relative; min-height:100vh; display:flex; flex-direction:column;}
+  .track-wrap{
+    position:relative; flex:1; margin:8px 10px 10px; border-radius:20px;
+    border:1px solid var(--panel-line); overflow:hidden;
+    background:radial-gradient(600px 400px at 50% 0%, rgba(255,255,255,0.03), transparent 60%);
+    min-height:62vh;
+  }
+  .cam-bg{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.35; transform:scaleX(-1);}
+  .track-svg{position:absolute; inset:0; width:100%; height:100%;}
+  .node{
+    position:absolute; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; gap:6px; z-index:4;
+  }
+  .node .ring{
+    width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--panel-line); background:rgba(10,16,28,0.85); font-size:20px;
+    transition:all .25s ease;
+  }
+  .node.done .ring{border-color:var(--amber); background:rgba(255,182,39,0.12); box-shadow:0 0 14px rgba(255,182,39,0.35);}
+  .node.target .ring{
+    border-color:var(--accent, var(--teal)); box-shadow:0 0 0 0 var(--accent,var(--teal));
+    animation:target-pulse 1.3s infinite;
+  }
+  @keyframes target-pulse{
+    0%{box-shadow:0 0 0 0 rgba(46,196,182,.55);}
+    70%{box-shadow:0 0 0 16px rgba(46,196,182,0);}
+    100%{box-shadow:0 0 0 0 rgba(46,196,182,0);}
+  }
+  .node .label{font-size:10.5px; color:var(--text-dim); text-align:center; max-width:80px; line-height:1.3; font-family:'Kanit'; font-weight:500;}
+  .node.target .label{color:var(--text);}
+
+  .cell{
+    position:absolute; width:56px; height:56px; border-radius:50%; z-index:6;
+    display:flex; align-items:center; justify-content:center; font-family:'Kanit'; font-weight:700; font-size:14px;
+    cursor:grab; touch-action:none; box-shadow:0 6px 20px rgba(0,0,0,.4);
+    transition:box-shadow .15s ease;
+  }
+  .cell:active{cursor:grabbing;}
+  .cell.dragging{box-shadow:0 10px 30px rgba(0,0,0,.55); z-index:8;}
+  .cell.o2{background:radial-gradient(circle at 32% 28%, #7fe9df, #1a9d90); color:#04211d;}
+  .cell.blood{background:radial-gradient(circle at 32% 28%, #ff8a9e, #a8123a); color:#3a0210;}
+  .cell.blood.oxy{background:radial-gradient(circle at 32% 28%, #ff8a9e, #e6395a); }
+  .cell.blood.deoxy{background:radial-gradient(circle at 32% 28%, #7a5b74, #3a2148); color:#eee;}
+
+  .reticle{
+    position:fixed; width:64px; height:64px; border-radius:50%; pointer-events:none; z-index:999;
+    border:1.5px dashed rgba(255,255,255,0.55); transform:translate(-50%,-50%); display:none;
+    transition:width .12s ease, height .12s ease, border-color .12s ease;
+  }
+  .reticle::before,.reticle::after{content:'';position:absolute; background:rgba(255,255,255,.75);}
+  .reticle::before{left:50%; top:-6px; width:1px; height:8px; transform:translateX(-50%);}
+  .reticle::after{left:-6px; top:50%; width:8px; height:1px; transform:translateY(-50%);}
+  .reticle.pinch{width:40px; height:40px; border-color:var(--amber); border-style:solid;}
+  .reticle .tag{position:absolute; top:-22px; left:50%; transform:translateX(-50%); font-size:10px; font-family:'Kanit'; color:var(--amber); white-space:nowrap;}
+  .hand-hover{outline:2px solid var(--amber) !important; outline-offset:2px;}
+
+  .hand-status{
+    display:flex; align-items:center; gap:6px; font-family:'Kanit'; font-size:11px; padding:5px 10px;
+    border-radius:999px; border:1px solid var(--panel-line); color:var(--text-dim);
+  }
+  .hand-status.live{color:var(--amber); border-color:var(--amber);}
+  .hand-status .hdot{width:6px;height:6px;border-radius:50%; background:currentColor;}
+
+  .hint-banner{
+    margin:10px 14px 0; padding:10px 14px; border-radius:14px; font-size:13px; text-align:center;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-line); color:var(--text-dim);
+  }
+  .hint-banner b{color:var(--text);}
+
+  /* ---------- Quiz modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(3,6,12,0.78); backdrop-filter:blur(6px); z-index:40;
+    display:flex; align-items:flex-end; justify-content:center; opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  .modal-backdrop.show{opacity:1; pointer-events:auto;}
+  .modal{
+    width:100%; max-width:480px; background:linear-gradient(180deg,#101a2e,#0a1120);
+    border:1px solid var(--panel-line); border-bottom:none; border-radius:22px 22px 0 0;
+    padding:22px 20px 28px; transform:translateY(20px); transition:transform .3s ease;
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal-backdrop.show .modal{transform:translateY(0);}
+  .modal .kicker{font-family:'Kanit'; font-size:11px; letter-spacing:2px; color:var(--accent,var(--teal)); text-transform:uppercase;}
+  .modal h3{margin:6px 0 10px; font-size:20px;}
+  .modal .fact{font-size:14px; line-height:1.7; color:var(--text-dim); margin-bottom:16px; padding:12px 14px; background:rgba(255,255,255,0.03); border-left:3px solid var(--accent,var(--teal)); border-radius:6px;}
+  .modal .qtext{font-size:15px; font-weight:600; margin-bottom:12px;}
+  .opt{
+    display:block; width:100%; text-align:right; padding:12px 14px; margin-bottom:9px; border-radius:12px;
+    border:1px solid var(--panel-line); background:rgba(255,255,255,0.02); color:var(--text); font-size:14px;
+    font-family:'Sarabun'; cursor:pointer; direction:ltr;
+  }
+  .opt.correct{border-color:var(--teal); background:rgba(46,196,182,0.14); color:var(--teal);}
+  .opt.wrong{border-color:var(--crimson); background:rgba(230,57,90,0.14); color:var(--crimson);}
+  .opt:disabled{opacity:.6;}
+  .modal .cta{
+    margin-top:6px; width:100%; padding:13px; border-radius:12px; border:none; font-family:'Kanit'; font-weight:700; font-size:15px;
+    background:var(--accent,var(--teal)); color:#04211d; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .modal .cta.show{opacity:1; pointer-events:auto;}
+
+  /* ---------- End screen ---------- */
+  .end-wrap{max-width:480px; margin:60px auto; text-align:center; padding:0 20px; position:relative; z-index:3;}
+  .end-wrap .medal{font-size:64px; margin-bottom:10px;}
+  .end-wrap h2{font-size:26px; margin-bottom:6px;}
+  .end-wrap .scoreline{font-family:'Kanit'; font-size:42px; font-weight:800; color:var(--amber); margin:14px 0;}
+  .btn{
+    display:inline-block; font-family:'Kanit'; font-weight:600; padding:13px 26px; border-radius:12px; border:none;
+    cursor:pointer; font-size:15px; margin:6px;
+  }
+  .btn.primary{background:var(--teal); color:#04211d;}
+  .btn.ghost{background:transparent; border:1px solid var(--panel-line); color:var(--text);}
+
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); z-index:60;
+    background:#0e1626; border:1px solid var(--panel-line); padding:11px 18px; border-radius:12px; font-size:13px;
+    color:var(--text); opacity:0; transition:all .3s ease; pointer-events:none; max-width:88vw; text-align:center;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  .back-btn{
+    background:none;border:none;color:var(--text-dim); font-family:'Kanit'; font-size:13px; cursor:pointer;
+    display:flex; align-items:center; gap:4px; padding:6px;
+  }
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+<div id="toast" class="toast"></div>
+
+<video id="handVideo" playsinline muted style="display:none; position:fixed; width:1px; height:1px; opacity:0;"></video>
+
+<div id="app">
+
+  <!-- ================= HOME ================= -->
+  <section class="screen active" id="screen-home">
+    <div class="hud">
+      <div class="brand"><span class="dot"></span> AR BODY LAB</div>
+      <div class="score" id="home-best">🏆 คะแนนสูงสุด 0</div>
+    </div>
+    <div class="home-wrap">
+      <div class="hero">
+        <div class="eyebrow">ชีววิทยา ม.2 · เกมสัมผัสมือ</div>
+        <h1>AR นักสำรวจ<span>ร่างกาย</span></h1>
+        <p>ลากด้วยนิ้ว (มือของคุณ) พาโมเลกุลออกซิเจนและเซลล์เม็ดเลือดเดินทางผ่านระบบหายใจและระบบไหลเวียนเลือด ตอบคำถามระหว่างทางเพื่อเก็บคะแนน</p>
+      </div>
+
+      <div class="hero-organs">
+        <svg class="organ-icon lung" viewBox="0 0 64 64" fill="none"><path d="M28 6c-2 8-2 14-2 14s-10-2-14 6-2 24 2 26 8-4 10-10c1-3 2-8 2-8s1 5 2 8c2 6 6 12 10 10s6-18 2-26-14-6-14-6 0-6-2-14z" fill="currentColor" opacity="0.85"/></svg>
+        <svg class="organ-icon heart" viewBox="0 0 64 64" fill="none"><path d="M32 56S6 40 6 22C6 12 14 6 22 6c5 0 8.5 2.5 10 6 1.5-3.5 5-6 10-6 8 0 16 6 16 16 0 18-26 34-26 34z" fill="currentColor" opacity="0.85"/></svg>
+      </div>
+      <div class="reticle-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        กดปุ่มด้านล่างเพื่อเปิดกล้องแล้วเล่นด้วย "การหยิบนิ้ว" (pinch) จริง — ถ้ากล้อง/การตรวจจับมือใช้ไม่ได้ ระบบจะสลับเป็นแตะลากด้วยนิ้วบนจอแทนอัตโนมัติ
+      </div>
+
+      <div class="cam-toggle" id="camToggle">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="M17 10l4-2v8l-4-2"/></svg>
+        <span id="camToggleText">เปิดกล้อง + ตรวจจับมือ (AR)</span>
+      </div>
+      <div style="text-align:center; margin-top:10px;">
+        <span class="hand-status" id="handStatus"><span class="hdot"></span><span id="handStatusText">ยังไม่ได้เปิดกล้อง</span></span>
+      </div>
+
+      <div class="level-grid">
+        <div class="level-card resp" data-level="respiratory">
+          <div class="glow"></div>
+          <div class="tag">ด่านที่ 1</div>
+          <h3>🫁 ระบบหายใจ</h3>
+          <p>พาโมเลกุล O₂ เดินทางจากจมูกสู่ถุงลมปอด เรียนรู้การแลกเปลี่ยนแก๊ส</p>
+          <div class="best" id="best-respiratory"></div>
+          <div class="go">เริ่มด่าน →</div>
+        </div>
+        <div class="level-card circ" data-level="circulatory">
+          <div class="glow"></div>
+          <div class="tag">ด่านที่ 2</div>
+          <h3>❤️ ระบบไหลเวียนเลือด</h3>
+          <p>นำเซลล์เม็ดเลือดผ่านหัวใจ 4 ห้อง ไปยังปอดและทั่วร่างกาย</p>
+          <div class="best" id="best-circulatory"></div>
+          <div class="go">เริ่มด่าน →</div>
+        </div>
+      </div>
+
+      <div class="footnote">ออกแบบสำหรับนักเรียนชั้นมัธยมศึกษาปีที่ 2 · เล่นได้ทั้งบนมือถือและคอมพิวเตอร์</div>
+    </div>
+  </section>
+
+  <!-- ================= LEVEL ================= -->
+  <section class="screen" id="screen-level">
+    <div class="hud">
+      <button class="back-btn" id="backBtn">← กลับหน้าหลัก</button>
+      <div class="ecg"><svg viewBox="0 0 200 40" preserveAspectRatio="none"><polyline id="ecgLine" points="" fill="none" stroke="var(--teal)" stroke-width="2"/></svg></div>
+      <span class="hand-status" id="handStatusLevel" style="display:none;"><span class="hdot"></span><span>โหมดมือ</span></span>
+      <div class="score" id="levelScore">⭐ 0</div>
+    </div>
+    <div class="hint-banner" id="hintBanner"></div>
+    <div class="track-wrap" id="trackWrap">
+      <video class="cam-bg" id="camBg" autoplay playsinline muted style="display:none;"></video>
+      <svg class="track-svg" id="trackSvg" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polyline id="pathLine" points="" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="0.6" stroke-dasharray="2,2"/>
+      </svg>
+      <div id="nodesLayer"></div>
+      <div class="cell" id="cell"></div>
+      <div class="reticle" id="reticle"></div>
+    </div>
+  </section>
+
+  <!-- ================= END ================= -->
+  <section class="screen" id="screen-end">
+    <div class="hud"><div class="brand"><span class="dot"></span> AR BODY LAB</div><div></div></div>
+    <div class="end-wrap">
+      <div class="medal" id="endMedal">🏅</div>
+      <h2 id="endTitle">เก่งมาก!</h2>
+      <p id="endSub" style="color:var(--text-dim); font-size:14px;"></p>
+      <div class="scoreline" id="endScore">0</div>
+      <div>
+        <button class="btn primary" id="replayBtn">เล่นด่านนี้อีกครั้ง</button>
+        <button class="btn ghost" id="homeBtn">กลับหน้าหลัก</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Quiz Modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="kicker" id="modalKicker">จุดที่ 1</div>
+    <h3 id="modalTitle">ชื่ออวัยวะ</h3>
+    <div class="fact" id="modalFact">ข้อเท็จจริง...</div>
+    <div class="qtext" id="modalQ">คำถาม?</div>
+    <div id="modalOpts"></div>
+    <button class="cta" id="modalCta">ไปต่อ →</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- Audio (WebAudio, no external files) ---------------- */
+  let actx;
+  function beep(freq, dur, type){
+    try{
+      actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type||'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.linearRampToValueAtTime(0.12, actx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime+dur+0.02);
+    }catch(e){}
+  }
+  const sndOk = ()=>{ beep(660,0.12); setTimeout(()=>beep(880,0.14),90); };
+  const sndBad = ()=> beep(160,0.22,'sawtooth');
+  const sndWin = ()=>{ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.2),i*110)); };
+
+  /* ---------------- Toast ---------------- */
+  const toastEl = document.getElementById('toast');
+  let toastTimer;
+  function toast(msg, ms){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>toastEl.classList.remove('show'), ms||2200);
+  }
+
+  /* ---------------- Best scores (in-memory only) ---------------- */
+  const BEST = { respiratory: 0, circulatory: 0 };
+  function refreshBest(){
+    document.getElementById('best-respiratory').textContent = BEST.respiratory ? '🏆 '+BEST.respiratory : '';
+    document.getElementById('best-circulatory').textContent = BEST.circulatory ? '🏆 '+BEST.circulatory : '';
+    document.getElementById('home-best').textContent = '🏆 คะแนนสูงสุด ' + Math.max(BEST.respiratory, BEST.circulatory);
+  }
+  refreshBest();
+
+  /* ---------------- Level data ---------------- */
+  const LEVELS = {
+    respiratory: {
+      name: 'ระบบหายใจ', accent: '#2ec4b6', cellClass:'o2', cellLabel:'O₂',
+      medal:'🫁', 
+      steps: [
+        { x:50, y:10, icon:'👃', name:'โพรงจมูก', fact:'อากาศที่หายใจเข้าจะถูกกรองฝุ่นละอองด้วยขนจมูก และถูกทำให้อุ่นชื้นขึ้นก่อนผ่านเข้าสู่ร่างกาย',
+          q:'หน้าที่หลักของโพรงจมูกคืออะไร?', opts:['กรองฝุ่นและปรับอุณหภูมิ-ความชื้นของอากาศ','สร้างเสียงพูด','ลำเลียงเลือดไปเลี้ยงสมอง','ย่อยสารอาหาร'], a:0 },
+        { x:22, y:27, icon:'🗣️', name:'คอหอย & กล่องเสียง', fact:'เป็นทางผ่านร่วมของอากาศและอาหาร มีฝาปิดกล่องเสียง (epiglottis) ปิดกั้นไม่ให้อาหารตกลงสู่หลอดลม',
+          q:'อวัยวะใดป้องกันไม่ให้อาหารตกลงไปในหลอดลม?', opts:['ฝาปิดกล่องเสียง (epiglottis)','ถุงลมปอด','กะบังลม','หลอดอาหาร'], a:0 },
+        { x:74, y:44, icon:'〰️', name:'หลอดลม', fact:'มีวงกระดูกอ่อนรูปตัว C ค้ำยันไม่ให้ท่อแฟบ ผนังด้านในมีขนเซลล์ (cilia) และเมือกช่วยดักจับสิ่งแปลกปลอม',
+          q:'สิ่งใดช่วยดักและกวาดฝุ่นละอองออกจากหลอดลม?', opts:['ขนเซลล์ (cilia) และเมือก','กระดูกอ่อนรูปตัว C','ถุงลมปอด','กะบังลม'], a:0 },
+        { x:26, y:62, icon:'🌿', name:'หลอดลมฝอย', fact:'หลอดลมแตกแขนงเล็กลงเรื่อยๆ เข้าสู่ปอดทั้งสองข้าง คล้ายกิ่งก้านของต้นไม้กลับหัว',
+          q:'หลอดลมฝอยแตกแขนงเข้าสู่อวัยวะใด?', opts:['ปอด','หัวใจ','กระเพาะอาหาร','ตับ'], a:0 },
+        { x:62, y:82, icon:'🫧', name:'ถุงลมปอด', fact:'จุดแลกเปลี่ยนแก๊สระหว่าง O₂ กับ CO₂ ผ่านผนังบางๆ ที่ล้อมรอบด้วยเส้นเลือดฝอยจำนวนมาก โดยวิธีการแพร่',
+          q:'การแลกเปลี่ยนแก๊สที่ถุงลมปอดเกิดขึ้นด้วยกระบวนการใด?', opts:['การแพร่ (diffusion)','การไหลเวียนโลหิต','การหมุนเวียนของน้ำเหลือง','การดูดซึมของลำไส้'], a:0 },
+      ]
+    },
+    circulatory: {
+      name: 'ระบบไหลเวียนเลือด', accent: '#e6395a', cellClass:'blood deoxy', cellLabel:'🩸',
+      medal:'❤️',
+      steps: [
+        { x:20, y:9, icon:'🔵', name:'หลอดเลือดดำใหญ่', fact:'เวนาคาวา (Vena Cava) นำเลือดที่มีคาร์บอนไดออกไซด์มาก (สีเข้ม) จากทั่วร่างกายกลับเข้าสู่หัวใจ',
+          q:'เลือดในหลอดเลือดดำใหญ่ (Vena Cava) เป็นเลือดชนิดใด?', opts:['เลือดที่มีคาร์บอนไดออกไซด์มาก (สีเข้ม)','เลือดที่มีออกซิเจนมาก (สีแดงสด)','พลาสมาล้วนไม่มีเม็ดเลือด','น้ำเหลือง'], a:0 },
+        { x:55, y:22, icon:'➡️', name:'หัวใจห้องบนขวา', fact:'รับเลือดจากร่างกาย แล้วส่งผ่านลิ้นหัวใจไตรคัสปิด (tricuspid) ลงสู่ห้องล่างขวา',
+          q:'ลิ้นหัวใจระหว่างห้องบนขวาและห้องล่างขวาเรียกว่าอะไร?', opts:['ลิ้นไตรคัสปิด (tricuspid)','ลิ้นไบคัสปิด (bicuspid)','ลิ้นเอออร์ตา','ลิ้นพัลโมนารี'], a:0 },
+        { x:30, y:38, icon:'⬇️', name:'หัวใจห้องล่างขวา', fact:'บีบตัวส่งเลือดที่มี CO₂ มากไปยังปอดทางหลอดเลือดพัลโมนารีอาร์เทอรี เพื่อไปฟอกแก๊ส',
+          q:'หัวใจห้องล่างขวาสูบฉีดเลือดไปยังอวัยวะใด?', opts:['ปอด','สมอง','ไต','กล้ามเนื้อทั่วร่างกาย'], a:0 },
+        { x:74, y:53, icon:'🫁', name:'ปอด (แลกเปลี่ยนแก๊ส)', fact:'ที่ถุงลมปอด เลือดจะปล่อย CO₂ และรับ O₂ เข้ามา ทำให้เปลี่ยนจากเลือดสีเข้มเป็นเลือดแดงสด',
+          q:'หลังผ่านปอดแล้ว เลือดจะมีลักษณะอย่างไร?', opts:['มีออกซิเจนมาก สีแดงสด','มีคาร์บอนไดออกไซด์มาก สีเข้ม','ไม่เปลี่ยนแปลงใดๆ','กลายเป็นน้ำเหลือง'], a:0, turnsOxy:true },
+        { x:32, y:69, icon:'⬅️', name:'หัวใจห้องบนซ้าย → ล่างซ้าย', fact:'เลือดที่มีออกซิเจนสูงไหลเข้าห้องบนซ้าย ผ่านลิ้นไบคัสปิดสู่ห้องล่างซ้ายซึ่งมีผนังหนาที่สุด เพื่อบีบเลือดแรงๆ ไปเลี้ยงทั่วร่างกาย',
+          q:'เพราะเหตุใดผนังห้องล่างซ้ายจึงหนากว่าห้องอื่น?', opts:['ต้องบีบเลือดแรงไปเลี้ยงทั่วร่างกาย','เพราะรับเลือดปริมาณน้อยที่สุด','เพราะอยู่ใกล้ปอดมากที่สุด','ไม่มีเหตุผลทางชีวภาพ'], a:0 },
+        { x:66, y:86, icon:'🔴', name:'เอออร์ตา → ทั่วร่างกาย', fact:'เอออร์ตา (Aorta) เป็นหลอดเลือดแดงใหญ่ที่สุดในร่างกาย ลำเลียงเลือดที่มีออกซิเจนสูงไปเลี้ยงเซลล์ทุกส่วน',
+          q:'เอออร์ตาทำหน้าที่อะไร?', opts:['ลำเลียงเลือดออกซิเจนสูงไปเลี้ยงทั่วร่างกาย','ลำเลียงเลือดกลับเข้าสู่หัวใจ','แลกเปลี่ยนแก๊สโดยตรง','ผลิตเซลล์เม็ดเลือดแดง'], a:0 },
+      ]
+    }
+  };
+
+  /* ---------------- Screen management ---------------- */
+  const screens = {
+    home: document.getElementById('screen-home'),
+    level: document.getElementById('screen-level'),
+    end: document.getElementById('screen-end'),
+  };
+  function show(name){
+    Object.values(screens).forEach(s=>s.classList.remove('active'));
+    screens[name].classList.add('active');
+  }
+
+  /* ---------------- ECG signature animation ---------------- */
+  const ecgLine = document.getElementById('ecgLine');
+  let ecgOffset = 0;
+  function ecgPoints(offset){
+    const base = [0,20, 10,20, 14,8, 18,32, 22,20, 30,20, 40,20, 44,10, 48,30, 52,20, 60,20, 70,20, 74,8, 78,32, 82,20, 90,20, 100,20];
+    // shift horizontally for animation using modulo mapping
+    let pts=[];
+    for(let i=0;i<base.length;i+=2){
+      let x = (base[i] + offset) % 100;
+      pts.push(x+','+base[i+1]);
+    }
+    return pts.join(' ');
+  }
+  function tickEcg(){
+    ecgOffset = (ecgOffset + 2) % 100;
+    ecgLine.setAttribute('points', ecgPoints(-ecgOffset));
+    requestAnimationFrame(tickEcg);
+  }
+  requestAnimationFrame(tickEcg);
+
+  /* ---------------- Camera + real hand-pose pinch tracking (best-effort) ---------------- */
+  let camOn = false;
+  const camBg = document.getElementById('camBg');
+  const camToggle = document.getElementById('camToggle');
+  const camToggleText = document.getElementById('camToggleText');
+  const handVideo = document.getElementById('handVideo');
+  const reticle = document.getElementById('reticle');
+  const handStatusHome = document.getElementById('handStatus');
+  const handStatusHomeText = document.getElementById('handStatusText');
+  const handStatusLevel = document.getElementById('handStatusLevel');
+  let camStream = null;
+  let handModel = null;
+  let handModeActive = false;
+  let handLoadAttempted = false;
+  let isPinching = false;
+  let grabbedByHand = false;
+  let handLoopId = null;
+  let lastClickTime = 0;
+
+  function setHandStatus(text, live){
+    handStatusHomeText.textContent = text;
+    handStatusHome.classList.toggle('live', !!live);
+    handStatusLevel.style.display = live ? 'flex' : 'none';
+    handStatusLevel.classList.toggle('live', !!live);
+  }
+
+  // Dynamically load an external script and resolve/reject on load/error.
+  function loadScript(src, timeoutMs){
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = src;
+      const t = setTimeout(()=>reject(new Error('timeout: '+src)), timeoutMs||9000);
+      s.onload = ()=>{ clearTimeout(t); resolve(); };
+      s.onerror = ()=>{ clearTimeout(t); reject(new Error('load failed: '+src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Attempts to load TensorFlow.js (from cdnjs) + the MediaPipe handpose model
+  // (published only on jsDelivr/unpkg). Inside Claude's sandboxed artifact preview,
+  // non-cdnjs script domains are blocked, so this will fail there and the game
+  // simply keeps using touch/mouse dragging. If this file is downloaded and opened
+  // directly in a regular browser, both scripts load normally and real camera-based
+  // pinch tracking turns on automatically.
+  let handposeLoadPromise = null;
+  function loadHandpose(){
+    if(handposeLoadPromise) return handposeLoadPromise;
+    handposeLoadPromise = (async ()=>{
+      if(!window.tf){
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.2.0/tf.min.js', 9000);
+      }
+      if(!window.handpose){
+        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.js', 9000);
+      }
+      return await window.handpose.load();
+    })();
+    return handposeLoadPromise;
+  }
+
+  function pointOnClickable(px, py){
+    const el = document.elementFromPoint(px, py);
+    if(!el) return null;
+    return el;
+  }
+
+  let lastHoverEl = null;
+  function handTick(){
+    handLoopId = requestAnimationFrame(handTick);
+    if(!handModel || handVideo.readyState < 2) return;
+    handModel.estimateHands(handVideo).then(preds=>{
+      if(!preds || !preds.length){
+        reticle.style.display = 'none';
+        if(lastHoverEl){ lastHoverEl.classList.remove('hand-hover'); lastHoverEl = null; }
+        if(isPinching){ isPinching = false; if(grabbedByHand){ grabbedByHand=false; checkDrop(); } }
+        return;
+      }
+      const lm = preds[0].landmarks; // 21 points [x,y,z] in video pixel space
+      const wrist = lm[0], indexTip = lm[8], thumbTip = lm[4], middleMcp = lm[9];
+      const vw = handVideo.videoWidth || 640, vh = handVideo.videoHeight || 480;
+      // mirror x to match the mirrored on-screen video feed
+      const nx = 1 - (indexTip[0] / vw);
+      const ny = indexTip[1] / vh;
+      const px = nx * window.innerWidth;
+      const py = ny * window.innerHeight;
+
+      reticle.style.display = 'block';
+      reticle.style.left = px + 'px';
+      reticle.style.top = py + 'px';
+
+      const handSize = Math.hypot(wrist[0]-middleMcp[0], wrist[1]-middleMcp[1]) || 1;
+      const pinchDist = Math.hypot(indexTip[0]-thumbTip[0], indexTip[1]-thumbTip[1]);
+      const pinching = (pinchDist / handSize) < 0.45;
+      reticle.classList.toggle('pinch', pinching);
+
+      // hover highlight for clickable elements
+      const hoverEl = pointOnClickable(px, py);
+      const clickableSel = '.opt:not(:disabled), .modal .cta.show, .level-card, .cam-toggle, .back-btn, .btn, #cell';
+      const hoverClickable = hoverEl ? hoverEl.closest(clickableSel) : null;
+      if(hoverClickable !== lastHoverEl){
+        if(lastHoverEl) lastHoverEl.classList.remove('hand-hover');
+        if(hoverClickable) hoverClickable.classList.add('hand-hover');
+        lastHoverEl = hoverClickable;
+      }
+
+      if(pinching && !isPinching){
+        // pinch start (edge)
+        isPinching = true;
+        if(hoverClickable && hoverClickable.id === 'cell' && state){
+          grabbedByHand = true;
+          cellEl.classList.add('dragging');
+        } else if(hoverClickable){
+          const now = Date.now();
+          if(now - lastClickTime > 380){ lastClickTime = now; hoverClickable.click(); }
+        }
+      } else if(!pinching && isPinching){
+        // pinch end
+        isPinching = false;
+        if(grabbedByHand){ grabbedByHand = false; cellEl.classList.remove('dragging'); checkDrop(); }
+      } else if(pinching && isPinching && grabbedByHand){
+        // dragging via hand
+        const wrapRect = trackWrap.getBoundingClientRect();
+        let cx = px - wrapRect.left - 28;
+        let cy = py - wrapRect.top - 28;
+        cx = Math.max(-28, Math.min(wrapRect.width-28, cx));
+        cy = Math.max(-28, Math.min(wrapRect.height-28, cy));
+        cellEl.style.left = cx + 'px';
+        cellEl.style.top = cy + 'px';
+      }
+    }).catch(()=>{});
+  }
+
+  camToggle.addEventListener('click', async ()=>{
+    if(camOn){
+      if(camStream){ camStream.getTracks().forEach(t=>t.stop()); }
+      camOn = false; handModeActive = false;
+      camToggleText.textContent = 'เปิดกล้อง + ตรวจจับมือ (AR)';
+      camToggle.classList.remove('on');
+      camBg.style.display = 'none';
+      reticle.style.display = 'none';
+      if(handLoopId) cancelAnimationFrame(handLoopId);
+      setHandStatus('ยังไม่ได้เปิดกล้อง', false);
+      return;
+    }
+    try{
+      camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});
+      camBg.srcObject = camStream;
+      camBg.style.display = 'block';
+      handVideo.srcObject = camStream;
+      camOn = true;
+      camToggleText.textContent = 'กล้อง AR: เปิดอยู่ (แตะเพื่อปิด)';
+      camToggle.classList.add('on');
+      setHandStatus('กำลังโหลดระบบตรวจจับมือ…', false);
+      toast('เปิดกล้องสำเร็จ กำลังเตรียมระบบตรวจจับมือ...');
+
+      handLoadAttempted = true;
+      try{
+        handModel = await loadHandpose();
+        handModeActive = true;
+        setHandStatus('🖐️ โหมดมือ: ทำงาน — หยิบนิ้วโป้ง+นิ้วชี้เพื่อกด/ลาก', true);
+        toast('ตรวจพบระบบมือแล้ว! ยกมือขึ้นหน้ากล้องแล้วหยิบนิ้วโป้งกับนิ้วชี้เพื่อเล่น');
+        handTick();
+      }catch(hErr){
+        setHandStatus('ใช้การแตะ/ลากด้วยนิ้วแทน (ตรวจจับมือใช้ไม่ได้ที่นี่)', false);
+        toast('หน้าต่างแสดงผลนี้โหลดไลบรารีตรวจจับมือไม่ได้ ระบบจึงสลับกลับไปใช้การแตะลากด้วยนิ้วแทน — ถ้าดาวน์โหลดไฟล์นี้ไปเปิดในเบราว์เซอร์ของคุณเอง การตรวจจับมือด้วยกล้องจะทำงานได้เต็มรูปแบบ', 5000);
+      }
+    }catch(err){
+      toast('ไม่สามารถเข้าถึงกล้องได้ ใช้การแตะลากด้วยนิ้วแทนนะ');
+    }
+  });
+
+  /* ---------------- Game state ---------------- */
+  let state = null; // {levelKey, stepIndex, score, startTime}
+
+  function startLevel(levelKey){
+    const lvl = LEVELS[levelKey];
+    state = { levelKey, stepIndex:0, score:0, wrongCount:0 };
+    document.getElementById('hintBanner').innerHTML =
+      'พาสัญลักษณ์ <b>'+lvl.cellLabel+'</b> ไปยังจุดที่กระพริบถัดไป — แตะค้างแล้วลากด้วยนิ้ว';
+    document.documentElement.style.setProperty('--accent', lvl.accent);
+    buildTrack();
+    updateScoreUI();
+    show('level');
+  }
+
+  function buildTrack(){
+    const lvl = LEVELS[state.levelKey];
+    const nodesLayer = document.getElementById('nodesLayer');
+    nodesLayer.innerHTML = '';
+    const pts = lvl.steps.map(s=>s.x+','+s.y).join(' ');
+    document.getElementById('pathLine').setAttribute('points', pts);
+
+    lvl.steps.forEach((s,i)=>{
+      const n = document.createElement('div');
+      n.className = 'node';
+      n.style.left = s.x+'%'; n.style.top = s.y+'%';
+      n.dataset.index = i;
+      n.innerHTML = '<div class="ring">'+s.icon+'</div><div class="label">'+s.name+'</div>';
+      nodesLayer.appendChild(n);
+    });
+    positionCellAtCurrent(true);
+    refreshNodeStates();
+  }
+
+  function refreshNodeStates(){
+    const lvl = LEVELS[state.levelKey];
+    document.querySelectorAll('.node').forEach(n=>{
+      const idx = +n.dataset.index;
+      n.classList.remove('done','target');
+      if(idx < state.stepIndex) n.classList.add('done');
+      if(idx === state.stepIndex) n.classList.add('target');
+    });
+  }
+
+  const cellEl = document.getElementById('cell');
+  function positionCellAtCurrent(instant){
+    const lvl = LEVELS[state.levelKey];
+    // cell starts slightly before the current target node, at previous node position (or top-left start if first)
+    let x, y;
+    if(state.stepIndex === 0){
+      x = Math.max(6, lvl.steps[0].x - 16); y = Math.max(4, lvl.steps[0].y - 4);
+    } else {
+      const prev = lvl.steps[state.stepIndex-1];
+      x = prev.x; y = prev.y;
+    }
+    cellEl.className = 'cell ' + lvl.cellClass;
+    cellEl.textContent = lvl.cellLabel;
+    const wrap = document.getElementById('trackWrap');
+    const rect = wrap.getBoundingClientRect();
+    cellEl.style.left = (x/100*rect.width - 28) + 'px';
+    cellEl.style.top = (y/100*rect.height - 28) + 'px';
+  }
+
+  function updateScoreUI(){
+    document.getElementById('levelScore').textContent = '⭐ ' + state.score;
+  }
+
+  /* ---------------- Drag logic (pointer events = works with finger/mouse) ---------------- */
+  const trackWrap = document.getElementById('trackWrap');
+  let dragging = false, dragOffsetX=0, dragOffsetY=0;
+
+  cellEl.addEventListener('pointerdown', (e)=>{
+    if(!state) return;
+    dragging = true;
+    cellEl.classList.add('dragging');
+    cellEl.setPointerCapture(e.pointerId);
+    const rect = cellEl.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+    reticle.style.display = 'block';
+  });
+
+  cellEl.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const wrapRect = trackWrap.getBoundingClientRect();
+    let nx = e.clientX - wrapRect.left - dragOffsetX;
+    let ny = e.clientY - wrapRect.top - dragOffsetY;
+    nx = Math.max(-28, Math.min(wrapRect.width-28, nx));
+    ny = Math.max(-28, Math.min(wrapRect.height-28, ny));
+    cellEl.style.left = nx + 'px';
+    cellEl.style.top = ny + 'px';
+    reticle.style.left = e.clientX + 'px';
+    reticle.style.top = e.clientY + 'px';
+  });
+
+  function endDrag(e){
+    if(!dragging) return;
+    dragging = false;
+    cellEl.classList.remove('dragging');
+    reticle.style.display = 'none';
+    checkDrop();
+  }
+  cellEl.addEventListener('pointerup', endDrag);
+  cellEl.addEventListener('pointercancel', endDrag);
+
+  function checkDrop(){
+    const lvl = LEVELS[state.levelKey];
+    const target = lvl.steps[state.stepIndex];
+    const wrapRect = trackWrap.getBoundingClientRect();
+    const cellRect = cellEl.getBoundingClientRect();
+    const cellCx = cellRect.left + cellRect.width/2 - wrapRect.left;
+    const cellCy = cellRect.top + cellRect.height/2 - wrapRect.top;
+    const targetX = target.x/100 * wrapRect.width;
+    const targetY = target.y/100 * wrapRect.height;
+    const dist = Math.hypot(cellCx-targetX, cellCy-targetY);
+    const threshold = Math.min(wrapRect.width, wrapRect.height) * 0.11;
+
+    if(dist <= threshold){
+      sndOk();
+      openQuiz(target);
+    } else {
+      sndBad();
+      cellEl.style.transition = 'left .3s ease, top .3s ease';
+      positionCellAtCurrent();
+      setTimeout(()=>{ cellEl.style.transition=''; }, 320);
+      toast('ยังไม่ถึงจุดหมาย ลองลากไปที่จุดที่กระพริบอยู่นะ');
+    }
+  }
+
+  /* ---------------- Quiz modal ---------------- */
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const modalKicker = document.getElementById('modalKicker');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalFact = document.getElementById('modalFact');
+  const modalQ = document.getElementById('modalQ');
+  const modalOpts = document.getElementById('modalOpts');
+  const modalCta = document.getElementById('modalCta');
+  let pendingStep = null;
+  let answeredCorrectly = false;
+
+  function openQuiz(step){
+    pendingStep = step;
+    answeredCorrectly = false;
+    const lvl = LEVELS[state.levelKey];
+    modalKicker.textContent = 'จุดที่ ' + (state.stepIndex+1) + ' / ' + lvl.steps.length + ' · ' + lvl.name;
+    modalTitle.textContent = step.icon + '  ' + step.name;
+    modalFact.textContent = step.fact;
+    modalQ.textContent = step.q;
+    modalOpts.innerHTML = '';
+    modalCta.classList.remove('show');
+    modalCta.textContent = 'ไปต่อ →';
+
+    const order = step.opts.map((t,i)=>({t,i}));
+    order.forEach(o=>{
+      const btn = document.createElement('button');
+      btn.className = 'opt';
+      btn.textContent = o.t;
+      btn.addEventListener('click', ()=>{
+        if(modalOpts.dataset.locked) return;
+        const correct = o.i === step.a;
+        if(correct){
+          modalOpts.dataset.locked = '1';
+          btn.classList.add('correct');
+          sndOk();
+          answeredCorrectly = true;
+          state.score += 10;
+          updateScoreUI();
+          modalCta.classList.add('show');
+        } else {
+          btn.classList.add('wrong');
+          btn.disabled = true;
+          sndBad();
+          state.wrongCount++;
+          toast('ยังไม่ถูกนะ ลองอีกครั้ง');
+        }
+      });
+      modalOpts.appendChild(btn);
+    });
+
+    modalBackdrop.classList.add('show');
+  }
+
+  modalCta.addEventListener('click', ()=>{
+    if(!answeredCorrectly) return;
+    modalBackdrop.classList.remove('show');
+    delete modalOpts.dataset.locked;
+
+    // handle special effect: blood turns oxygenated after lungs
+    const lvl = LEVELS[state.levelKey];
+    if(pendingStep.turnsOxy){
+      cellEl.classList.remove('deoxy');
+      cellEl.classList.add('oxy');
+    }
+
+    state.stepIndex++;
+    if(state.stepIndex >= lvl.steps.length){
+      finishLevel();
+    } else {
+      refreshNodeStates();
+      cellEl.style.transition = 'left .35s ease, top .35s ease';
+      positionCellAtCurrent();
+      setTimeout(()=>{ cellEl.style.transition=''; }, 380);
+    }
+  });
+
+  function finishLevel(){
+    sndWin();
+    const lvl = LEVELS[state.levelKey];
+    const bonus = Math.max(0, 30 - state.wrongCount*5);
+    state.score += bonus;
+    if(state.score > BEST[state.levelKey]) BEST[state.levelKey] = state.score;
+    refreshBest();
+
+    document.getElementById('endMedal').textContent = lvl.medal;
+    document.getElementById('endTitle').textContent = 'ผ่านด่าน "' + lvl.name + '" สำเร็จ!';
+    document.getElementById('endSub').textContent = state.wrongCount === 0
+      ? 'ตอบถูกทุกข้อในความพยายามแรก เยี่ยมมาก!'
+      : 'ตอบผิด ' + state.wrongCount + ' ครั้ง — ลองอีกครั้งเพื่อทำคะแนนให้เต็ม!';
+    document.getElementById('endScore').textContent = state.score;
+    show('end');
+  }
+
+  /* ---------------- Navigation wiring ---------------- */
+  document.querySelectorAll('.level-card').forEach(card=>{
+    card.addEventListener('click', ()=> startLevel(card.dataset.level));
+  });
+  document.getElementById('backBtn').addEventListener('click', ()=> show('home'));
+  document.getElementById('homeBtn').addEventListener('click', ()=> show('home'));
+  document.getElementById('replayBtn').addEventListener('click', ()=> startLevel(state.levelKey));
+
+  window.addEventListener('resize', ()=>{ if(state) positionCellAtCurrent(); });
+
+})();
+</script>
+</body>
+</html>
